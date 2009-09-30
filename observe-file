@@ -1,0 +1,84 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+use Pod::Usage;
+use Getopt::Long;
+use IO::File;
+STDOUT->autoflush(1); STDERR->autoflush(1);
+
+use Time::HiRes;
+use Linux::Inotify2;
+
+my $command;
+my @files;
+Getopt::Long::Configure("bundling");
+GetOptions(
+    'command|c=s' => \$command,
+    'exec|x=s'    => sub { $command = $_[1]; push @files, $_[1]; },
+    'help|h|?'    => sub { pod2usage() },
+    ) or pod2usage;
+push @files, @ARGV;
+pod2usage unless $command;
+
+my $n    = Linux::Inotify2->new;
+my $mask = IN_CLOSE_WRITE | IN_MOVE_SELF;
+
+$n->watch($_, $mask) for @files, '/dev/stdin';
+run_command($command);
+print "-- \n";
+
+while (1) {
+    my @ev = $n->read;
+
+    if (@ev > 0) {
+        Time::HiRes::sleep 0.5;
+        run_command($command);
+        print "-- \n";
+        $n->watch($_->fullname, $mask) for @ev;
+    } else {
+        die "read error: $!";
+    }
+}
+
+sub run_command {
+    my($command) = @_;
+
+     # use sysread, syswrite for no buffering
+    open my $cmdout, '-|', $command or die "$!";
+    my($buf, $r);
+    while ($r = sysread $cmdout, $buf, 80) {
+        syswrite STDOUT, $buf, $r;
+    }
+    close $cmdout;
+}
+
+__END__
+
+=head1 SYNOPSIS
+
+  observe-file -c command file [file...]
+    $ observe-file -c "make foo && ./foo"  foo.c foo.h libbar.c
+    $ observe-file -c reload-firefox  *.html *.css *.js
+
+  observe-file -x file
+    $ observe-file -x ./bar.pl
+
+=head1 COPYRIGHT & LICENSE
+
+Copyright HIROSE Masaaki 2009-
+
+This program is free software; you can redistribute it and/or modify
+it under the same terms as Perl itself.
+
+=cut
+
+# for Emacsen
+# Local Variables:
+# mode: cperl
+# cperl-indent-level: 4
+# indent-tabs-mode: nil
+# coding: utf-8
+# End:
+
+# vi: set ts=4 sw=4 sts=0 :
