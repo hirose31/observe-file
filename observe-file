@@ -7,7 +7,6 @@ use Getopt::Long;
 use IO::File;
 STDOUT->autoflush(1); STDERR->autoflush(1);
 
-use Time::HiRes;
 use Linux::Inotify2;
 
 my $command;
@@ -29,15 +28,16 @@ run_command($command);
 print "-- \n";
 
 while (1) {
-    my @ev = $n->read;
+    my @ev = $n->read; # block
 
     if (@ev > 0) {
-        Time::HiRes::sleep 0.5;
+        # call cancel and re-watch to prevent firing multiple events.
+        $_->w->cancel for @ev;
         run_command($command);
         print "-- \n";
         $n->watch($_->fullname, $mask) for @ev;
     } else {
-        die "read error: $!";
+        warn "read error: $!";
     }
 }
 
