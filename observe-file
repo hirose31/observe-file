@@ -37,7 +37,7 @@ while (1) {
         print "-- \n";
         $n->watch($_->fullname, $mask) for @ev;
     } else {
-        warn "read error: $!";
+        ; # warn "read error: $!";
     }
 }
 
