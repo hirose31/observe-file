@@ -8,6 +8,18 @@ use IO::File;
 STDOUT->autoflush(1); STDERR->autoflush(1);
 
 use Linux::Inotify2;
+use Time::HiRes ();
+
+BEGIN {
+    my $debug_flag = $ENV{SMART_COMMENTS} || $ENV{SMART_DEBUG} || $ENV{SC};
+    if ($debug_flag) {
+        my @p = map { '#'x$_ } ($debug_flag =~ /([345])\s*/g);
+        eval {
+            require Smart::Comments;
+            import Smart::Comments @p;
+        };
+    }
+}
 
 my $command;
 my @files;
@@ -18,6 +30,7 @@ GetOptions(
     'help|h|?'    => sub { pod2usage() },
     ) or pod2usage;
 push @files, @ARGV;
+### files: \@files
 pod2usage unless $command;
 
 my $n    = Linux::Inotify2->new;
@@ -33,6 +46,7 @@ while (1) {
     if (@ev > 0) {
         # call cancel and re-watch to prevent firing multiple events.
         $_->w->cancel for @ev;
+        Time::HiRes::sleep 0.2; # workaround for Can't exec "XXX": Text file busy
         run_command($command);
         print "-- \n";
         $n->watch($_->fullname, $mask) for @ev;
