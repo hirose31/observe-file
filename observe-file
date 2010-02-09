@@ -101,9 +101,23 @@ This is equivalent:
 
 =head2 reload Firefox when contents have changed
 
-  observe-file -c reload-firefox  *.html *.css *.js
+  observe-file -c "reload-firefox localhost"  *.html *.css *.js
 
-  observe-file -c 'deploy && reload-firefox'  webapp/
+  observe-file -c "deploy && reload-firefox mymacbook"  webapp/
+
+"reload-filefox" is simple shell script to request Firefox with MozRepl.
+
+  #!/bin/sh
+  [ $# -eq 1 -o $# -eq 2 ] || { echo 'usage: reload-firefox HOST PORT'; exit 1; }
+  host=$1
+  port=${2:-4242}
+  
+  echo "reload: $host:$port"
+  cat <<EOF | nc $host $port
+  content.location.reload(true)
+  repl.quit()
+  EOF
+  echo
 
 =head1 REPOSITORY
 
