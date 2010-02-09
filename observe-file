@@ -8,7 +8,8 @@ use IO::File;
 STDOUT->autoflush(1); STDERR->autoflush(1);
 
 use Linux::Inotify2;
-use Time::HiRes ();
+use Path::Class qw(file dir);
+use Time::HiRes qw();
 
 BEGIN {
     my $debug_flag = $ENV{SMART_COMMENTS} || $ENV{SMART_DEBUG} || $ENV{SC};
@@ -29,7 +30,21 @@ GetOptions(
     'exec|x=s'    => sub { $command = $_[1]; push @files, $_[1]; },
     'help|h|?'    => sub { pod2usage() },
     ) or pod2usage;
-push @files, @ARGV;
+
+for my $o (map {-d $_?dir($_):file($_)} @ARGV) {
+    if ($o->is_dir) {
+        $o->recurse(callback => sub {
+                        my $oc = shift;
+                        return if $o eq $oc;
+                        if (!$oc->is_dir) {
+                            push @files, $oc->absolute->stringify;
+                        }
+                    });
+    } else {
+        push @files, $o->absolute->stringify;
+    }
+}
+
 ### files: \@files
 pod2usage unless $command;
 
