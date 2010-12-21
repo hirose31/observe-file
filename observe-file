@@ -4,76 +4,93 @@ use strict;
 use warnings;
 use Pod::Usage;
 use Getopt::Long;
-use IO::File;
-STDOUT->autoflush(1); STDERR->autoflush(1);
-
-use Linux::Inotify2;
-use Path::Class qw(file dir);
-use Time::HiRes qw();
 
 BEGIN {
     my $debug_flag = $ENV{SMART_COMMENTS} || $ENV{SMART_DEBUG} || $ENV{SC};
     if ($debug_flag) {
         my @p = map { '#'x$_ } ($debug_flag =~ /([345])\s*/g);
-        eval {
-            require Smart::Comments;
-            import Smart::Comments @p;
-        };
+        use UNIVERSAL::require;
+        Smart::Comments->use(@p);
     }
 }
 
+use File::ChangeNotify;
+use Path::Class qw(file dir);
+use Time::HiRes qw();
+
 my $command;
-my @files;
+my(%files, %parent_dirs, %dirs);
 Getopt::Long::Configure("bundling");
 GetOptions(
     'command|c=s' => \$command,
-    'exec|x=s'    => sub { $command = $_[1]; push @files, $_[1]; },
+    'exec|x=s'    => sub { $command = $_[1]; push @ARGV, $_[1]; },
     'help|h|?'    => sub { pod2usage() },
     ) or pod2usage;
 
+# File::ChangeNotify はファイルを監視対象にできないので、ファイルが
+# 指定された場合はその親ディレクトリを監視対象にする。そして、イベントが
+# 発火したら、イベント発火起因のファイルパスとコマンドラインで指定された
+# ファイルパスを比較して本気発火するかどうかを判断する。
+
 for my $o (map {-d $_?dir($_):file($_)} @ARGV) {
     if ($o->is_dir) {
-        $o->recurse(callback => sub {
-                        my $oc = shift;
-                        return if $o eq $oc;
-                        if (!$oc->is_dir) {
-                            push @files, $oc->absolute->stringify;
-                        }
-                    });
+        $dirs{$o->absolute->stringify}++;
     } else {
-        push @files, $o->absolute->stringify;
+        $files{$o->absolute->stringify}++;
+        $parent_dirs{ $o->absolute->parent }++;
     }
 }
 
-### files: \@files
+### %files
+### %parent_dirs
+### %dirs
+
 pod2usage unless $command;
 
-my $n    = Linux::Inotify2->new;
-my $mask = IN_CLOSE_WRITE | IN_MOVE_SELF;
+my $watcher = File::ChangeNotify->instantiate_watcher(
+    directories => [ keys(%parent_dirs), keys(%dirs) ],
+   );
+print "with ", ref $watcher, "\n";
 
-$n->watch($_, $mask) for @files, '/dev/stdin';
+
 run_command($command);
 print "-- \n";
 
-while (1) {
-    my @ev = $n->read; # block
+while (my @events = $watcher->wait_for_events()) {
+    # workaround for Can't exec "XXX": Text file
+    # and fire modify event twice with Inotify.
+    Time::HiRes::sleep 0.2;
+    push @events, $watcher->new_events();
+    ### events: @events
 
-    if (@ev > 0) {
-        # call cancel and re-watch to prevent firing multiple events.
-        $_->w->cancel for @ev;
-        Time::HiRes::sleep 0.2; # workaround for Can't exec "XXX": Text file busy
+    my $fire = 0;
+    for my $e (@events) {
+        if ($e->path =~ m{(/.#|_flymake\.?\w*$|~$)}) {
+            next;
+        } elsif (exists $files{ $e->path }) {
+            ### f: $e->path
+            $fire = 1;
+            last;
+        } elsif (exists $dirs{ file($e->path)->parent }) {
+            ### d: $e->path
+            $fire = 1;
+            last;
+        } else {
+            ### ?: $e->path
+            ;
+        }
+    }
+
+    if ($fire) {
         run_command($command);
         print "-- \n";
-        $n->watch($_->fullname, $mask) for @ev;
-    } else {
-        ; # warn "read error: $!";
     }
 }
 
 sub run_command {
     my($command) = @_;
 
-     # use sysread, syswrite for no buffering
+    # use sysread, syswrite for no buffering
     open my $cmdout, '-|', $command or die "$!";
     my($buf, $r);
     while ($r = sysread $cmdout, $buf, 80) {
