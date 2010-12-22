@@ -47,13 +47,12 @@ for my $o (map {-d $_?dir($_):file($_)} @ARGV) {
 
 pod2usage unless $command;
 
-my $watcher = do {
-    if ($^O eq 'darwin') {#fixme
-        Filesys::Notify::Simple->new([keys(%parent_dirs), keys(%dirs)]);
-    } else {
-        Filesys::Notify::Simple->new([keys(%files), keys(%dirs)]);
-    }
-};
+my $watcher = Filesys::Notify::Simple->new([]);
+if (grep /FSEvents/, keys %INC) {
+    $watcher->{paths} = [keys(%parent_dirs), keys(%dirs)]
+} else {
+    $watcher->{paths} = [keys(%files), keys(%dirs)]
+}
 
 run_command($command);
 print "-- \n";
