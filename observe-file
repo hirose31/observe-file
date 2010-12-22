@@ -14,7 +14,7 @@ BEGIN {
     }
 }
 
-use File::ChangeNotify;
+use Filesys::Notify::Simple;
 use Path::Class qw(file dir);
 use Time::HiRes qw();
 
@@ -34,10 +34,10 @@ GetOptions(
 
 for my $o (map {-d $_?dir($_):file($_)} @ARGV) {
     if ($o->is_dir) {
-        $dirs{$o->absolute->stringify}++;
+        $dirs{ $o->absolute->stringify}++;
     } else {
         $files{$o->absolute->stringify}++;
-        $parent_dirs{ $o->absolute->parent }++;
+        $parent_dirs{$o->parent->absolute->stringify}++;
     }
 }
 
@@ -47,44 +47,56 @@ for my $o (map {-d $_?dir($_):file($_)} @ARGV) {
 
 pod2usage unless $command;
 
-my $watcher = File::ChangeNotify->instantiate_watcher(
-    directories => [ keys(%parent_dirs), keys(%dirs) ],
-   );
-print "with ", ref $watcher, "\n";
-
+my $watcher = do {
+    if ($^O eq 'darwin') {#fixme
+        Filesys::Notify::Simple->new([keys(%parent_dirs), keys(%dirs)]);
+    } else {
+        Filesys::Notify::Simple->new([keys(%files), keys(%dirs)]);
+    }
+};
 
 run_command($command);
 print "-- \n";
 
-while (my @events = $watcher->wait_for_events()) {
-    # workaround for Can't exec "XXX": Text file
-    # and fire modify event twice with Inotify.
-    Time::HiRes::sleep 0.2;
-    push @events, $watcher->new_events();
-    ### events: @events
+my $last_fire = 0;
+while (1) {
+    $watcher->wait(
+        sub {
+            ### events: @_
+            my $now = Time::HiRes::time();
 
-    my $fire = 0;
-    for my $e (@events) {
-        if ($e->path =~ m{(/.#|_flymake\.?\w*$|~$)}) {
-            next;
-        } elsif (exists $files{ $e->path }) {
-            ### f: $e->path
-            $fire = 1;
-            last;
-        } elsif (exists $dirs{ file($e->path)->parent }) {
-            ### d: $e->path
-            $fire = 1;
-            last;
-        } else {
-            ### ?: $e->path
-            ;
-        }
-    }
+            # workaround for Can't exec "XXX": Text file
+            Time::HiRes::sleep 0.2;
 
-    if ($fire) {
-        run_command($command);
-        print "-- \n";
-    }
+            my $fire = 0;
+            for my $e (values %{{map { $_->{path} => $_ } @_}}) {
+                ### e: $e
+
+                if ($e->{path} =~ m{(/.#|_flymake\.?\w*$|~$)}) {
+                    next;
+                } elsif (exists $files{ $e->{path} }
+                         or exists $dirs{  file($e->{path})->parent }
+                     ) {
+                    ### interest f/d: $e->{path}
+                    $fire = 1;
+                } else {
+                    ### ??: $e->{path}
+                    ;
+                }
+            }
+
+            # 前回発火時刻から 1.0 秒以上経過しているときだけ、コマンド
+            # を実行する。
+            # Inotify2 の場合、ファイルを保存したときに極短時間
+            # で 2 回発火しちゃうのでその対策でげす。
+            ### dt: $now - $last_fire
+            if ($fire && $now - $last_fire >= 1.0) {
+                run_command($command);
+                print "-- \n";
+
+                $last_fire = $now;
+            }
+        });
 }
 
 sub run_command {
