@@ -14,6 +14,13 @@ BEGIN {
     }
 }
 
+# File::ChangeNotify は、Inotify2 が使える環境であってもファイルを監視
+# 対象にできない (ディレクトリだけ) ので、親ディレクトリを監視対象にし
+# て、イベントが発火したらパスをみて興味があるファイルかどうか判断する
+# 処理を書けばいい。ただ、最初に対象ディレクトリの配下を全部なめるので、
+# 大量にファイルがあるホームディレクトリ直下のファイルを監視するのは現
+# 実的に困難である。なので、File::ChangeNotify は使わない。
+
 use Filesys::Notify::Simple;
 use Path::Class qw(file dir);
 use Time::HiRes qw();
@@ -27,10 +34,6 @@ GetOptions(
     'help|h|?'    => sub { pod2usage() },
     ) or pod2usage;
 
-# File::ChangeNotify はファイルを監視対象にできないので、ファイルが
-# 指定された場合はその親ディレクトリを監視対象にする。そして、イベントが
-# 発火したら、イベント発火起因のファイルパスとコマンドラインで指定された
-# ファイルパスを比較して本気発火するかどうかを判断する。
 
 for my $o (map {-d $_?dir($_):file($_)} @ARGV) {
     if ($o->is_dir) {
