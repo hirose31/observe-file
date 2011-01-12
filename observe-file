@@ -38,6 +38,10 @@ GetOptions(
 for my $o (map {-d $_?dir($_):file($_)} @ARGV) {
     if ($o->is_dir) {
         $dirs{ $o->absolute->stringify}++;
+        $o->recurse(callback => sub {
+                        my $o = shift;
+                        $dirs{ $o->absolute->stringify}++ if $o->is_dir;
+                    });
     } else {
         $files{$o->absolute->stringify}++;
         $parent_dirs{$o->parent->absolute->stringify}++;
@@ -77,7 +81,7 @@ while (1) {
                 if ($e->{path} =~ m{(/.#|_flymake\.?\w*$|~$)}) {
                     next;
                 } elsif (exists $files{ $e->{path} }
-                         or exists $dirs{  file($e->{path})->parent }
+                         or exists $dirs{ file($e->{path})->parent }
                      ) {
                     ### interest f/d: $e->{path}
                     $fire = 1;
