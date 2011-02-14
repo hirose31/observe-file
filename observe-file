@@ -91,14 +91,19 @@ while (1) {
                 }
             }
 
-            # 前回発火時刻から 1.0 秒以上経過しているときだけ、コマンド
+            # 前回発火時刻から 2.0 秒以上経過しているときだけ、コマンド
             # を実行する。
             # Inotify2 の場合、ファイルを保存したときに極短時間
             # で 2 回発火しちゃうのでその対策でげす。
+            ### fire: $fire
+            ### now: $now
+            ### last_fire: $last_fire
             ### dt: $now - $last_fire
-            if ($fire && $now - $last_fire >= 1.0) {
-                run_command($command);
-                print "-- \n";
+            if ($fire) {
+                if ($now - $last_fire >= 2.0) {
+                    run_command($command);
+                    print "-- \n";
+                }
 
                 $last_fire = $now;
             }
