@@ -1,5 +1,5 @@
 #!/bin/bash
-# Time-stamp: <2012-10-19 13:28:02 JST, hirose31>
+# Time-stamp: <2012-10-19 22:37:32 JST, hirose31>
 #
 # ファイルやディレクトリが更新されたら任意のコマンドを実行する
 #
@@ -60,6 +60,9 @@ wait_for_change() {
 # echo "target : $observe_targets"
 # echo "command: $command:"
 
+echo ">> "
+bash -c "$command"
+echo "<< "
 while wait_for_change $observe_targets; do
   echo ">> "
   bash -c "$command"
