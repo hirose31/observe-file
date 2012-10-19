@@ -1,210 +1,68 @@
-#!/usr/bin/env perl
+#!/bin/bash
+# Time-stamp: <2012-10-19 13:28:02 JST, hirose31>
+#
+# ファイルやディレクトリが更新されたら任意のコマンドを実行する
+#
 
-use strict;
-use warnings;
-use Pod::Usage;
-use Getopt::Long;
+prog=${0##*/}
+basedir=${0%/*}
 
-BEGIN {
-    my $debug_flag = $ENV{SMART_COMMENTS} || $ENV{SMART_DEBUG} || $ENV{SC};
-    if ($debug_flag) {
-        my @p = map { '#'x$_ } ($debug_flag =~ /([345])\s*/g);
-        use UNIVERSAL::require;
-        Smart::Comments->use(@p);
-    }
+die() { echo "[ABORT] $@"; exit 1; }
+
+usage() {
+  [ -z "$@" ] || echo "[error] $@" 1>&2
+  cat <<EOUSAGE
+[usage]
+  $prog [-h?] -c COMMAND FILE|DIR [ FILE|DIR ] ...
+  $prog [-h?] -x FILE
+    -h -?  help
+EOUSAGE
+  exit 2
 }
 
-# File::ChangeNotify は、Inotify2 が使える環境であってもファイルを監視
-# 対象にできない (ディレクトリだけ) ので、親ディレクトリを監視対象にし
-# て、イベントが発火したらパスをみて興味があるファイルかどうか判断する
-# 処理を書けばいい。ただ、最初に対象ディレクトリの配下を全部なめるので、
-# 大量にファイルがあるホームディレクトリ直下のファイルを監視するのは現
-# 実的に困難である。なので、File::ChangeNotify は使わない。
+command=
+observe_targets=
 
-use Filesys::Notify::Simple;
-use Path::Class qw(file dir);
-use Time::HiRes qw();
+OPTIND_OLD=$OPTIND
+OPTIND=1
+while getopts "h?c:x:" opt; do
+  case $opt in
+    c)
+      command=$OPTARG
+      observe_targets='' # あとで入れる
+      ;;
+    x)
+      command=$OPTARG
+      observe_targets=$command
+      ;;
+    ?|h)
+      usage
+      ;;
+  esac
+done
+shift $(($OPTIND - 1))
+OPTIND=$OPTIND_OLD
 
-my $command;
-my(%files, %parent_dirs, %dirs);
-Getopt::Long::Configure("bundling");
-GetOptions(
-    'command|c=s' => \$command,
-    'exec|x=s'    => sub { $command = $_[1]; push @ARGV, $_[1]; },
-    'help|h|?'    => sub { pod2usage() },
-    ) or pod2usage;
+if [ -z "$observe_targets" ]; then
+  observe_targets="$@"
+fi
+if [ -z "$observe_targets" ]; then
+  usage "missing arguments"
+fi
 
-
-for my $o (map {-d $_?dir($_):file($_)} @ARGV) {
-    if ($o->is_dir) {
-        $dirs{ $o->absolute->stringify}++;
-        $o->recurse(callback => sub {
-                        my $o = shift;
-                        $dirs{ $o->absolute->stringify}++ if $o->is_dir;
-                    });
-    } else {
-        $files{$o->absolute->stringify}++;
-        $parent_dirs{$o->parent->absolute->stringify}++;
-    }
+wait_for_change() {
+  inotifywait -r \
+    -e 'close_write,create,delete' \
+    --excludei '(.*\.swp$|\.git/|service/|\.#.*|.*~$)' \
+    "$@" 2>/dev/null
 }
 
-### %files
-### %parent_dirs
-### %dirs
+# echo "target : $observe_targets"
+# echo "command: $command:"
 
-pod2usage unless $command;
+while wait_for_change $observe_targets; do
+  echo ">> "
+  bash -c "$command"
+  echo "<< "
+done
 
-my $watcher = Filesys::Notify::Simple->new([]);
-if (grep /FSEvents/, keys %INC) {
-    $watcher->{paths} = [keys(%parent_dirs), keys(%dirs)]
-} else {
-    $watcher->{paths} = [keys(%files), keys(%dirs)]
-}
-
-run_command($command);
-print "-- \n";
-
-my $last_fire = 0;
-while (1) {
-    $watcher->wait(
-        sub {
-            ### events: @_
-            my $now = Time::HiRes::time();
-
-            # workaround for Can't exec "XXX": Text file
-            Time::HiRes::sleep 0.2;
-
-            my $fire = 0;
-            for my $e (values %{{map { $_->{path} => $_ } @_}}) {
-                ### e: $e
-
-                if ($e->{path} =~ m{(/.#|_flymake\.?\w*$|~$)}) {
-                    next;
-                } elsif (exists $files{ $e->{path} }
-                         or exists $dirs{ file($e->{path})->parent }
-                     ) {
-                    ### interest f/d: $e->{path}
-                    $fire = 1;
-                } else {
-                    ### ??: $e->{path}
-                    ;
-                }
-            }
-
-            # 前回発火時刻から 2.0 秒以上経過しているときだけ、コマンド
-            # を実行する。
-            # Inotify2 の場合、ファイルを保存したときに極短時間
-            # で 2 回発火しちゃうのでその対策でげす。
-            ### fire: $fire
-            ### now: $now
-            ### last_fire: $last_fire
-            ### dt: $now - $last_fire
-            if ($fire) {
-                if ($now - $last_fire >= 2.0) {
-                    run_command($command);
-                    print "-- \n";
-                }
-
-                $last_fire = $now;
-            }
-        });
-}
-
-sub run_command {
-    my($command) = @_;
-
-    # use sysread, syswrite for no buffering
-    open my $cmdout, '-|', $command or die "$!";
-    my($buf, $r);
-    while ($r = sysread $cmdout, $buf, 80) {
-        syswrite STDOUT, $buf, $r;
-    }
-    close $cmdout;
-}
-
-__END__
-
-=head1 NAME
-
-B<observe-file> - do arbitrary command when observed files have changed
-
-=head1 SYNOPSIS
-
-B<observe-file> B<-c> I<COMMAND> ( I<FILE> | I<DIR> ) [ ( I<FILE> | I<DIR> ) ... ]
-
-B<observe-file> B<-x> I<FILE>
-
-=head1 OPTIONS
-
-=over 4
-
-=item B<-c> I<COMMAND>
-
-Do command I<COMMAND> when following files have changed.
-
-You can also specify directory name to observe files in directory recursively.
-
-=item B<-x> I<FILE>
-
-observe I<FILE> and do I<FILE>.
-
-This is equivalent:
-
-    observe-file -c I<FILE> I<FILE>
-
-=back
-
-=head1 EXAMPLES
-
-=head2 edit and run simple script
-
-    observe-file -x ./foo.pl
-
-    observe-file -c "perl -wcT ./foo.pl && ./foo.pl" ./foo.pl
-
-=head2 build and run automatically
-
-    observe-file -c "make myprog && ./myprog"  myprog.c myprog.h libfoo.c
-
-    observe-file -c "make myprog && ./myprog"  src/
-
-=head2 reload Firefox when contents have changed
-
-    observe-file -c "reload-firefox localhost"  *.html *.css *.js
-
-    observe-file -c "deploy && reload-firefox mymacbook"  webapp/
-
-"reload-filefox" is simple shell script to request Firefox with MozRepl.
-
-    #!/bin/sh
-    [ $# -eq 1 -o $# -eq 2 ] || { echo 'usage: reload-firefox HOST PORT'; exit 1; }
-    host=$1
-    port=${2:-4242}
-    
-    echo "reload: $host:$port"
-    cat <<EOF | nc $host $port
-    content.location.reload(true)
-    repl.quit()
-    EOF
-    echo
-
-=head1 REPOSITORY
-
-L<http://github.com/hirose31/observe-file>
-
-=head1 COPYRIGHT & LICENSE
-
-This program is free software; you can redistribute it and/or modify it
-under the same terms as Perl itself.
-
-=cut
-
-# for Emacsen
-# Local Variables:
-# mode: cperl
-# cperl-indent-level: 4
-# indent-tabs-mode: nil
-# coding: utf-8
-# End:
-
-# vi: set ts=4 sw=4 sts=0 :
