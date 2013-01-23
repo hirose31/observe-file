@@ -1,7 +1,6 @@
 #!/bin/bash
-# Time-stamp: <2012-10-19 22:37:32 JST, hirose31>
 #
-# ファイルやディレクトリが更新されたら任意のコマンドを実行する
+# perform arbitrary command when change file or directory
 #
 
 prog=${0##*/}
@@ -13,8 +12,9 @@ usage() {
   [ -z "$@" ] || echo "[error] $@" 1>&2
   cat <<EOUSAGE
 [usage]
-  $prog [-h?] -c COMMAND FILE|DIR [ FILE|DIR ] ...
-  $prog [-h?] -x FILE
+  $prog [-1] [-h?] -c COMMAND FILE|DIR [ FILE|DIR ] ...
+  $prog [-1] [-h?] -x FILE
+    -1     oneshot
     -h -?  help
 EOUSAGE
   exit 2
@@ -22,6 +22,7 @@ EOUSAGE
 
 command=
 observe_targets=
+oneshot=
 
 OPTIND_OLD=$OPTIND
 OPTIND=1
@@ -29,11 +30,14 @@ while getopts "h?c:x:" opt; do
   case $opt in
     c)
       command=$OPTARG
-      observe_targets='' # あとで入れる
+      observe_targets='' # set later
       ;;
     x)
       command=$OPTARG
       observe_targets=$command
+      ;;
+    1)
+      oneshot=1
       ;;
     ?|h)
       usage
@@ -53,7 +57,7 @@ fi
 wait_for_change() {
   inotifywait -r \
     -e 'close_write,create,delete' \
-    --excludei '(.*\.swp$|\.git/|service/|\.#.*|.*~$)' \
+    --excludei '(.*\.swp$|\.git/|service/|\.#.*|.*~$|_flymake)' \
     "$@" 2>/dev/null
 }
 
@@ -63,6 +67,8 @@ wait_for_change() {
 echo ">> "
 bash -c "$command"
 echo "<< "
+[ ! -z "$oneshot" ] && exit
+
 while wait_for_change $observe_targets; do
   echo ">> "
   bash -c "$command"
