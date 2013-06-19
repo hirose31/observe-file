@@ -8,6 +8,15 @@ basedir=${0%/*}
 
 die() { echo "[ABORT] $@"; exit 1; }
 
+_color_() {
+  color=$1; shift
+  echo -e "\e[${color}${@}\e[0m"
+}
+fg_GREEN()   { _color_ "32;1m" $@; }
+
+begin_command() { fg_GREEN ">> "; }
+end_command()   { fg_GREEN "<< "; }
+
 usage() {
   [ -z "$@" ] || echo "[error] $@" 1>&2
   cat <<EOUSAGE
@@ -64,14 +73,14 @@ wait_for_change() {
 # echo "target : $observe_targets"
 # echo "command: $command:"
 
-echo ">> "
+begin_command
 bash -c "$command"
-echo "<< "
+end_command
 [ ! -z "$oneshot" ] && exit
 
 while wait_for_change $observe_targets; do
-  echo ">> "
+  begin_command
   bash -c "$command"
-  echo "<< "
+  end_command
 done
 
