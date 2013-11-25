@@ -14,8 +14,8 @@ _color_() {
 }
 fg_GREEN()   { _color_ "32;1m" $@; }
 
-begin_command() { fg_GREEN ">> "; }
-end_command()   { fg_GREEN "<< "; }
+begin_command() { fg_GREEN ">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> "; }
+end_command()   { fg_GREEN "<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< "; }
 
 usage() {
   [ -z "$@" ] || echo "[error] $@" 1>&2
@@ -63,24 +63,33 @@ if [ -z "$observe_targets" ]; then
   usage "missing arguments"
 fi
 
+pid=
+
+kill_child() {
+  if [ ! -z "$pid" ]; then
+    echo "kill $pid"
+    kill -TERM $pid
+    echo "wait $pid"
+    wait $pid
+  fi >/dev/null 2>&1
+}
+
 wait_for_change() {
   inotifywait -r \
     -e 'close_write,create,delete' \
     --excludei '(.*\.swp$|\.git/|service/|\.#.*|.*~$|_flymake)' \
     "$@" 2>/dev/null
+  kill_child
 }
+
+trap kill_child EXIT
 
 # echo "target : $observe_targets"
 # echo "command: $command:"
 
-begin_command
-bash -c "$command"
-end_command
-[ ! -z "$oneshot" ] && exit
-
-while wait_for_change $observe_targets; do
+while :; do
   begin_command
-  bash -c "$command"
-  end_command
+  bash -c "$command" &
+  pid=$!
+  wait_for_change $observe_targets
 done
-
