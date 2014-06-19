@@ -71,6 +71,9 @@ kill_child() {
     kill -TERM $pid
     echo "wait $pid"
     wait $pid
+    if [[ $? != "0" ]]; then
+      sleep 2
+    fi
   fi >/dev/null 2>&1
 }
 
