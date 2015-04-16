@@ -32,10 +32,11 @@ EOUSAGE
 command=
 observe_targets=
 oneshot=
+additional_exclude=
 
 OPTIND_OLD=$OPTIND
 OPTIND=1
-while getopts "h?c:x:" opt; do
+while getopts "h?c:x:e:" opt; do
   case $opt in
     c)
       command=$OPTARG
@@ -47,6 +48,9 @@ while getopts "h?c:x:" opt; do
       ;;
     1)
       oneshot=1
+      ;;
+    e)
+      additional_exclude=$OPTARG
       ;;
     ?|h)
       usage
@@ -78,9 +82,15 @@ kill_child() {
 }
 
 wait_for_change() {
+  exclude='(.*\.swp$|\.git/|service/|\.#.*|.*~$|_flymake'
+  if [[ $additional_exclude ]]; then
+    exclude="${exclude}|${additional_exclude}"
+  fi
+  exclude="${exclude})"
+
   inotifywait -r \
     -e 'close_write,create,delete' \
-    --excludei '(.*\.swp$|\.git/|service/|\.#.*|.*~$|_flymake)' \
+    --excludei $exclude \
     "$@" 2>/dev/null
   kill_child
 }
