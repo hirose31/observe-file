@@ -70,15 +70,22 @@ fi
 pid=
 
 kill_child() {
-  if [ ! -z "$pid" ]; then
-    echo "kill $pid"
-    kill -TERM $pid
-    echo "wait $pid"
-    wait $pid
-    if [[ $? != "0" ]]; then
-      sleep 2
-    fi
-  fi >/dev/null 2>&1
+  if [[ -z "$pid" ]]; then
+    return
+  fi
+
+  if kill -0 $pid >/dev/null 2>&1; then
+    {
+      #echo "kill $pid"
+      kill -TERM $pid
+      #echo "wait $pid"
+      wait $pid
+      if [[ $? != "0" ]]; then
+        sleep 2
+      fi
+    } >/dev/null 2>&1
+    end_command
+  fi
 }
 
 wait_for_change() {
@@ -104,5 +111,19 @@ while :; do
   begin_command
   bash -c "$command" &
   pid=$!
+
+  # 数秒だけ終了するのを待つ
+  for _n in 1 2 3; do
+    if kill -0 $pid >/dev/null 2>&1; then
+      #echo "$pid still alive"
+      sleep 1
+    else
+      #echo "$pid dead"
+      wait $pid
+      end_command
+      break
+    fi
+  done
+
   wait_for_change $observe_targets
 done
