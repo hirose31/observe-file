@@ -45,6 +45,10 @@ while getopts "h?c:x:e:" opt; do
     x)
       command=$OPTARG
       observe_targets=$command
+      case $observe_targets in
+        *.go)
+          command="go run $observe_targets"
+      esac
       ;;
     1)
       oneshot=1
@@ -104,8 +108,8 @@ wait_for_change() {
 
 trap kill_child EXIT
 
-# echo "target : $observe_targets"
-# echo "command: $command:"
+echo "target : $observe_targets"
+echo "command: $command:"
 
 while :; do
   begin_command
