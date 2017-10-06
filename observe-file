@@ -93,7 +93,7 @@ kill_child() {
 }
 
 wait_for_change() {
-  exclude='(.*\.swp$|\.git/|service/|\.#.*|.*~$|_flymake'
+  exclude='(.*\.swp$|\.git/|service/|\.#.*|.*~$|_flymake|flycheck_'
   if [[ $additional_exclude ]]; then
     exclude="${exclude}|${additional_exclude}"
   fi
