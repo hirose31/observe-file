@@ -130,4 +130,5 @@ while :; do
   done
 
   wait_for_change $observe_targets
+  sleep 0.5
 done
